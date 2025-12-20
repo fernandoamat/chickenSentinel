@@ -8,6 +8,7 @@ dependencies = [
     "blobconverter>=1.4.3",
     "depthai>=3.2.1",
     "gpiozero>=2.0.1",
+    "matplotlib>=3.10.8",
     "numpy>=2.3.5",
     "opencv-python>=4.11.0.86",
 ]
