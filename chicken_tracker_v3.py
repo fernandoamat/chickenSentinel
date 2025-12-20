@@ -23,6 +23,58 @@ class SpatialVisualizer(dai.node.HostNode):
         self.lastGreenMaskTime = 0
         self.greenMaskInterval = 3.0  # seconds between mask updates
         self.greenThreshold = 0  # minimum difference G must exceed R and B by
+        self.allowedClasses = {'bird', 'horse', 'sheep', 'cow', 'bear'}  # Set of allowed class names (None = allow all)
+
+    def setAllowedClasses(self, classes):
+        """
+        Set the allowed YOLO classes for detection display.
+
+        Args:
+            classes: Iterable of class names to allow (e.g., {'bird', 'cat', 'dog'})
+                     Pass None to allow all classes.
+        """
+        self.allowedClasses = set(classes) if classes is not None else None
+
+    def isAllowedDetection(self, detection):
+        """
+        Check if a detection's class is in the allowed set.
+
+        Args:
+            detection: A detection object with labelName attribute
+
+        Returns:
+            True if detection should be displayed, False otherwise
+        """
+        if self.allowedClasses is None:
+            return True
+        return detection.labelName in self.allowedClasses
+
+    def isOutsideGreenZone(self, detection):
+        """
+        Check if a detection's centroid is outside the green zone (on a pixel with value 0).
+
+        Args:
+            detection: A detection object with xmin, xmax, ymin, ymax (normalized 0-1)
+
+        Returns:
+            True if centroid is on a non-green pixel (value 0), False otherwise.
+            Returns False if no green mask is available yet.
+        """
+        if self.lastGreenMask is None:
+            return False
+
+        # TODO: is cnetroid what we want? Or should we use lowest corner of the bounding box?
+        # play around once the enrtire system is setup
+        height, width = self.lastGreenMask.shape[:2]
+        cx = int(((detection.xmin + detection.xmax) / 2) * width)
+        cy = int(((detection.ymin + detection.ymax) / 2) * height)
+
+        # Clamp to valid pixel coordinates
+        cx = max(0, min(cx, width - 1))
+        cy = max(0, min(cy, height - 1))
+
+        return self.lastGreenMask[cy, cx] == 0
+
     def build(self, depth:dai.Node.Output, detections: dai.Node.Output, rgb: dai.Node.Output):
         self.link_args(depth, detections, rgb) # Must match the inputs to the process method
 
@@ -87,6 +139,10 @@ class SpatialVisualizer(dai.node.HostNode):
     def displayResults(self, rgbFrame, depthFrameColor, greenMask, detections):
         height, width, _ = rgbFrame.shape
         for detection in detections:
+            if not self.isAllowedDetection(detection):
+                continue
+            if not self.isOutsideGreenZone(detection):
+                continue
             self.drawBoundingBoxes(depthFrameColor, detection)
             self.drawDetections(rgbFrame, detection, width, height)
 
