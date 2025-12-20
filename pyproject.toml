@@ -1,0 +1,13 @@
+[project]
+name = "chickensentinel"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "blobconverter>=1.4.3",
+    "depthai>=3.2.1",
+    "gpiozero>=2.0.1",
+    "numpy>=2.3.5",
+    "opencv-python>=4.11.0.86",
+]
