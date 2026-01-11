@@ -23,7 +23,7 @@ class SpatialVisualizer(dai.node.HostNode):
         self.lastGreenMaskTime = 0
         self.greenMaskInterval = 3.0  # seconds between mask updates
         self.greenThreshold = 0  # minimum difference G must exceed R and B by
-        self.allowedClasses = {'bird', 'horse', 'sheep', 'cow', 'bear'}  # Set of allowed class names (None = allow all)
+        self.allowedClasses = {'bird', 'horse', 'sheep', 'cow', 'bear', 'bottle'}  # Set of allowed class names (None = allow all)
 
     def setAllowedClasses(self, classes):
         """
