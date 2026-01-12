@@ -216,7 +216,7 @@ def select_best_detection(detections, allowed_classes: set,
         #log.info("Before green_detector")
         if not green_detector.is_outside_green(det):
             continue
-        log.info(f"Adding {det.labelName} to valid detections. Coordinates:{det.spatialCoordinates} Passed all checks")
+        log.info(f"Adding {det.labelName} to valid detections. Coordinates: x={det.spatialCoordinates.x}, y={det.spatialCoordinates.y}, z={det.spatialCoordinates.z} Passed all checks")
         valid.append(det)
 
     if not valid:
