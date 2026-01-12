@@ -33,7 +33,7 @@ def set_angle(pwm_device, angle):
     pwm_device.change_duty_cycle(duty_cycle)
 
 pan_angle = 0
-tilt_angle = 0
+tilt_angle = 45 # start upright
 STEP = 5
 
 def main(stdscr):

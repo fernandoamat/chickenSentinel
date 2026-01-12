@@ -23,7 +23,7 @@ from rpi_hardware_pwm import HardwarePWM
 # =============================================================================
 
 # Detection settings
-ALLOWED_CLASSES = {'bird', 'horse', 'sheep', 'cow', 'bear'}
+ALLOWED_CLASSES = {'bird', 'horse', 'sheep', 'cow', 'bear', 'bottle'}
 FPS = 15  # Reduced from 30 for RPi Zero 2W efficiency
 
 # Timing
@@ -38,7 +38,9 @@ SCAN_DELAY = 0.5  # Seconds between scan steps
 
 # Tracking control
 CENTERING_THRESHOLD = 50  # mm - X offset considered "centered"
-PAN_GAIN = 0.05  # Proportional gain: degrees per mm of X offset
+# You can tune PAN_GAIN and TILT_GAIN if the movement is still too fast or too slow when tracking
+PAN_GAIN = 0.01  # Proportional gain: degrees per mm of X offset.
+TILT_GAIN = 0.01  # Proportional gain: degrees per mm of Y offset
 
 # Hardware pins
 PUMP_PIN = 17
@@ -84,27 +86,29 @@ class TurretState(Enum):
 
 
 # =============================================================================
-# TILT CALCULATION 
+# TARGET Y CALCULATION
 # You need to change this method based on your own calibration data
 # It depends on where you mount the turret
 # =============================================================================
 
 
-def calculate_tilt_from_depth(z_mm: float) -> float:
+def calculate_target_y(z_mm: float) -> float:
     """
-    Calculate desired tilt angle based on target distance (Z).
+    Calculate target Y coordinate (mm) based on target distance (Z).
+
+    The turret should aim to minimize the offset between the detection's
+    actual Y coordinate and this target Y value.
 
     Args:
         z_mm: Distance to target in millimeters
 
     Returns:
-        Tilt angle in degrees (-90 to +90)
+        Target Y coordinate in millimeters
 
     """
     # Linear regression formula: y = 0.3654 * z - 282.318
     # You need to change this based on your own calibration data
-    y_value = (0.3654 * z_mm) - 282.318
-    return y_value
+    return (0.3654 * z_mm) - 282.318
 
 
 # =============================================================================
@@ -189,7 +193,7 @@ def is_valid_spatial_coordinates(detection) -> bool:
 
 
 def select_best_detection(detections, allowed_classes: set,
-                          green_detector: GreenZoneDetector):
+                          green_detector: GreenZoneDetector, log):
     """
     Select the highest-confidence detection from allowed classes outside green zone.
 
@@ -203,12 +207,16 @@ def select_best_detection(detections, allowed_classes: set,
     """
     valid = []
     for det in detections:
+        #log.info(f"Select best detection: processing {det.labelName}")
         if det.labelName not in allowed_classes:
             continue
+        #log.info("Before is_valid_spatial_coordinates")
         if not is_valid_spatial_coordinates(det):
             continue
+        #log.info("Before green_detector")
         if not green_detector.is_outside_green(det):
             continue
+        log.info(f"Adding {det.labelName} to valid detections. Coordinates:{det.spatialCoordinates} Passed all checks")
         valid.append(det)
 
     if not valid:
@@ -253,7 +261,7 @@ def main():
     # State variables
     state = TurretState.SCANNING
     pan_angle = 0.0
-    tilt_angle = 0.0
+    tilt_angle = 45.0 # start upright
     last_target_seen_time = time.time()  # Tracks when we last saw a target (for faster scan resumption)
     scan_direction = 1  # 1 = moving toward positive, -1 = toward negative
     shoot_start = 0.0
@@ -337,8 +345,10 @@ def main():
                 if det_msg is not None:
                     detections = det_msg.detections
                     target = select_best_detection(
-                        detections, ALLOWED_CLASSES, green_detector
+                        detections, ALLOWED_CLASSES, green_detector, log
                     )
+                else:
+                    log.info("Debugging:det_msg is none")
 
                 if target is not None:
                     last_target_seen_time = now
@@ -351,7 +361,7 @@ def main():
                         state = TurretState.TRACKING
                         log.info(
                             f"Target acquired: {target.labelName} "
-                            f"conf={target.confidence:.2f} z={z_depth:.0f}mm"
+                            f"conf={target.confidence:.2f} z={z_depth:.2f}mm x={x_offset:.2f}mm from center"
                         )
 
                     if state == TurretState.TRACKING:
@@ -364,8 +374,15 @@ def main():
                         pan_adjustment = max(-MAX_PAN_RATE, min(MAX_PAN_RATE, pan_adjustment))
                         pan_angle = max(-90, min(90, pan_angle + pan_adjustment))
 
-                        # Tilt based on depth
-                        tilt_angle = calculate_tilt_from_depth(z_depth)
+                        # Proportional tilt control with rate limiting
+                        # Calculate Y offset from target position
+                        y_actual = target.spatialCoordinates.y
+                        y_target = calculate_target_y(z_depth)
+                        y_offset = y_actual - y_target
+
+                        tilt_adjustment = -y_offset * TILT_GAIN
+                        tilt_adjustment = max(-MAX_PAN_RATE, min(MAX_PAN_RATE, tilt_adjustment))
+                        tilt_angle = max(-90, min(90, tilt_angle + tilt_adjustment))
 
                         try:
                             set_angle(pan_servo, pan_angle)

@@ -13,7 +13,7 @@ Uses the YOLOv6-nano model for object detection and spatial information.
 """
 
 modelDescription = dai.NNModelDescription("yolov6-nano")
-FPS = 30
+FPS = 15
 
 class SpatialVisualizer(dai.node.HostNode):
     def __init__(self):

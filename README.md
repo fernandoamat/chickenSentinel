@@ -167,7 +167,8 @@ All tunable parameters are at the top of `raspberrypi/auto_turret_control.py`:
 | Constant | Default | Description |
 |----------|---------|-------------|
 | `CENTERING_THRESHOLD` | 50 | mm X-offset to consider "centered" |
-| `PAN_GAIN` | 0.05 | Proportional gain (degrees per mm) |
+| `PAN_GAIN` | 0.01 | Proportional gain for pan (degrees per mm of X offset) |
+| `TILT_GAIN` | 0.01 | Proportional gain for tilt (degrees per mm of Y offset) |
 | `TARGET_LOST_TIMEOUT` | 2.0 | Seconds before scanning after losing target |
 | `MAX_PAN_RATE` | 15.0 | Maximum degrees per cycle (smooth movement) |
 
@@ -179,26 +180,26 @@ All tunable parameters are at the top of `raspberrypi/auto_turret_control.py`:
 
 ### Key Functions
 
-#### `calculate_tilt_from_depth(z_mm: float) -> float`
+#### `calculate_target_y(z_mm: float) -> float`
 
-**Location:** `auto_turret_control.py:91-106`
+**Location:** `auto_turret_control.py:94-110`
 
-Placeholder function that calculates tilt angle based on target distance. **This needs calibration** based on your actual water nozzle trajectory.
+Calculates the target Y coordinate (in mm) that the turret should aim at based on target distance. The tilt servo uses proportional control to minimize the offset between the detection's actual Y coordinate and this target value. **This needs calibration** based on your turret mounting position and water nozzle trajectory.
 
-Current implementation:
-- Close targets (1m): +10 degrees (aim slightly up)
-- Far targets (5m): -20 degrees (compensate for water arc)
-
+Current implementation uses a linear regression formula:
 ```python
-def calculate_tilt_from_depth(z_mm: float) -> float:
-    z_clamped = max(1000, min(5000, z_mm))
-    tilt = 10 - (z_clamped - 1000) * 30 / 4000
-    return tilt
+def calculate_target_y(z_mm: float) -> float:
+    # y = 0.3654 * z - 282.318
+    return (0.3654 * z_mm) - 282.318
 ```
+
+Both pan and tilt use the same proportional control approach:
+- **Pan**: Adjusts to minimize X offset (target X should be ~0mm, i.e., centered horizontally)
+- **Tilt**: Adjusts to minimize Y offset (target Y should match the calibrated formula)
 
 #### `GreenZoneDetector`
 
-**Location:** `auto_turret_control.py:113-162`
+**Location:** `auto_turret_control.py:119-167`
 
 Detects grass/green areas using simple RGB thresholding. Targets standing on grass are considered "safe" and won't be sprayed.
 
@@ -207,7 +208,7 @@ Detects grass/green areas using simple RGB thresholding. Targets standing on gra
 
 #### `is_valid_spatial_coordinates(detection) -> bool`
 
-**Location:** `auto_turret_control.py:169-187`
+**Location:** `auto_turret_control.py:175-192`
 
 Validates that a detection has usable 3D coordinates:
 - Checks for NaN values in x, y, z coordinates
@@ -215,7 +216,7 @@ Validates that a detection has usable 3D coordinates:
 
 #### `select_best_detection()`
 
-**Location:** `auto_turret_control.py:190-217`
+**Location:** `auto_turret_control.py:195-227`
 
 Selects the highest-confidence detection that:
 1. Is in `ALLOWED_CLASSES`
@@ -263,21 +264,23 @@ chickenSentinel/
 
 ## Calibration Guide
 
-### 1. Pan Gain Tuning
+### 1. Pan/Tilt Gain Tuning
 
-If tracking is too slow, increase `PAN_GAIN`. If it oscillates/overshoots, decrease it.
+If tracking is too slow, increase `PAN_GAIN` and `TILT_GAIN`. If the servos oscillate or overshoot, decrease them.
 
 ```python
-PAN_GAIN = 0.05  # Start here, adjust as needed
+PAN_GAIN = 0.01   # degrees per mm of X offset
+TILT_GAIN = 0.01  # degrees per mm of Y offset
 ```
 
-### 2. Tilt/Depth Calibration
+### 2. Target Y Calibration
 
-Test water trajectory at known distances and update `calculate_tilt_from_depth()`:
+The `calculate_target_y()` function defines what Y coordinate (in mm) the turret should aim at for a given depth. To calibrate:
 
-1. Place a target at 1m, 2m, 3m, 4m, 5m
-2. Manually find the tilt angle that hits each distance
-3. Update the function with your measured values
+1. Place a target at known distances (e.g., 1m, 2m, 3m, 4m, 5m)
+2. For each distance, note the Y coordinate reported when the water hits the target
+3. Fit a linear regression to your data points (Z vs Y)
+4. Update the formula in `calculate_target_y()`
 
 ### 3. Green Zone Threshold
 
