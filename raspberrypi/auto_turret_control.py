@@ -10,6 +10,7 @@ Usage:
 """
 
 import logging
+import math
 import time
 from enum import Enum
 
@@ -28,19 +29,22 @@ FPS = 15  # Reduced from 30 for RPi Zero 2W efficiency
 
 # Timing
 SHOOT_DURATION = 3.0  # Seconds to spray water
-COOLDOWN_DURATION = 2.0  # Seconds after shooting before resuming
-GREEN_MASK_INTERVAL = 10.0  # Seconds between green mask updates
+COOLDOWN_DURATION = 10.0  # Seconds after shooting before resuming
+IDLE_COOLDOWN_DURATION = 60.0  # Seconds to idle after full scan with no detections. Increase to preserve battery.
+GREEN_MASK_INTERVAL = 10.0  # Seconds between green mask updates. Increase to reduce CPU load.
 
 # Scanning mode
-SCAN_RANGE = (-60, 60)  # Pan angle range (degrees)
+SCAN_RANGE = (-45, 60)  # Pan angle range (degrees)
 SCAN_STEP = 5  # Degrees per scan movement
-SCAN_DELAY = 0.5  # Seconds between scan steps
+SCAN_DELAY = 2.0  # Seconds between scan steps
+SCANNING_TILT_ANGLE = 45.0  # Tilt angle during scanning (degrees)
 
 # Tracking control
 CENTERING_THRESHOLD = 50  # mm - X offset considered "centered"
-# You can tune PAN_GAIN and TILT_GAIN if the movement is still too fast or too slow when tracking
-PAN_GAIN = 0.01  # Proportional gain: degrees per mm of X offset.
-TILT_GAIN = 0.01  # Proportional gain: degrees per mm of Y offset
+TRACKING_DELAY = 0.5  # Seconds to wait after servo command before next measurement
+
+# Targeting control
+TARGET_DETECTION_CONFIDENCE_THRESHOLD = 0.6  # Minimum confidence to consider a detection valid. Increase to reduce false positives.
 
 # Hardware pins
 PUMP_PIN = 17
@@ -49,7 +53,7 @@ TILT_PWM_CHANNEL = 1  # GPIO 13
 
 # Tracking behavior
 TARGET_LOST_TIMEOUT = 5.0  # Seconds before scanning after losing target
-MAX_PAN_RATE = 15.0  # Maximum degrees per update cycle for smooth movement
+MAX_PAN_RATE = 2.0  # Maximum degrees per update cycle for smooth movement. Critical for smooth tracking.
 
 # Monitoring
 STATUS_LOG_INTERVAL = 30.0  # Seconds between periodic status logs
@@ -59,7 +63,7 @@ STATUS_LOG_INTERVAL = 30.0  # Seconds between periodic status logs
 # =============================================================================
 
 
-def set_angle(pwm_device, angle: float) -> None:
+def set_angle(pwm_device, angle: float, log) -> None:
     """
     Set servo angle.
 
@@ -67,7 +71,10 @@ def set_angle(pwm_device, angle: float) -> None:
         pwm_device: HardwarePWM instance
         angle: Angle in degrees (-90 to +90)
     """
+    # too much logging
+    # log.info(f"Setting servo angle (pan or tilt) to {angle} degrees")
     angle = max(-90, min(90, angle))
+    # Convert angle to duty cycle (Equation: 2.5 + (angle + 90) / 180 * 10)
     # Servo PWM: 2.5% = -90deg, 7.5% = 0deg, 12.5% = +90deg
     duty_cycle = 2.5 + (angle + 90) / 18.0
     pwm_device.change_duty_cycle(duty_cycle)
@@ -216,7 +223,7 @@ def select_best_detection(detections, allowed_classes: set,
         #log.info("Before green_detector")
         if not green_detector.is_outside_green(det):
             continue
-        log.info(f"Adding {det.labelName} to valid detections. Coordinates: x={det.spatialCoordinates.x}, y={det.spatialCoordinates.y}, z={det.spatialCoordinates.z} Passed all checks")
+        log.info(f"Adding {det.labelName} to valid detections. Coordinates: x={det.spatialCoordinates.x:.2f}, y={det.spatialCoordinates.y:.2f}, z={det.spatialCoordinates.z:.2f} Passed all checks")
         valid.append(det)
 
     if not valid:
@@ -261,13 +268,15 @@ def main():
     # State variables
     state = TurretState.SCANNING
     pan_angle = 0.0
-    tilt_angle = 45.0 # start upright
+    tilt_angle = SCANNING_TILT_ANGLE  # start upright
     last_target_seen_time = time.time()  # Tracks when we last saw a target (for faster scan resumption)
     scan_direction = 1  # 1 = moving toward positive, -1 = toward negative
     shoot_start = 0.0
     cooldown_start = 0.0
     last_status_log = time.time()  # For periodic status logging
     detection_count = 0  # Count valid detections for status logging
+    scan_detected_target = False  # Track if target seen during current scan sweep
+    is_idle_cooldown = False  # Distinguish idle vs post-shoot cooldown
 
     green_detector = GreenZoneDetector()
 
@@ -300,7 +309,7 @@ def main():
             spatialNet.setBoundingBoxScaleFactor(0.5)
             spatialNet.setDepthLowerThreshold(100)
             spatialNet.setDepthUpperThreshold(5000)
-            spatialNet.setConfidenceThreshold(0.25)
+            spatialNet.setConfidenceThreshold(TARGET_DETECTION_CONFIDENCE_THRESHOLD)
 
             # Link mono cameras to stereo
             monoLeft.requestOutput((640, 400)).link(stereo.left)
@@ -315,8 +324,8 @@ def main():
 
             # Set initial servo positions
             try:
-                set_angle(pan_servo, pan_angle)
-                set_angle(tilt_servo, tilt_angle)
+                set_angle(pan_servo, pan_angle, log)
+                set_angle(tilt_servo, tilt_angle, log)
             except Exception as e:
                 log.error(f"Failed to set initial servo positions: {e}")
 
@@ -347,12 +356,14 @@ def main():
                     target = select_best_detection(
                         detections, ALLOWED_CLASSES, green_detector, log
                     )
-                else:
-                    log.info("Debugging:det_msg is none")
+                # uncommenting this generates too much log info
+                #else:
+                #    log.info("Debugging:det_msg is none")
 
                 if target is not None:
                     last_target_seen_time = now
                     detection_count += 1
+                    scan_detected_target = True
                     x_offset = target.spatialCoordinates.x  # mm from center
                     z_depth = target.spatialCoordinates.z
 
@@ -365,28 +376,41 @@ def main():
                         )
 
                     if state == TurretState.TRACKING:
-                        # Proportional pan control with rate limiting
+                        # Calculate angle to target using trigonometry (not mm-based gain)
+                        # This gives the actual angular offset from camera center
                         # NOTE: Pan direction sign may need to be flipped depending on
                         # how your camera and servo are mounted. Test and adjust if needed.
-                        pan_adjustment = -x_offset * PAN_GAIN
+                        angle_to_target = math.degrees(math.atan2(x_offset, z_depth))
+                        pan_adjustment = -angle_to_target
 
                         # Rate limiting: clamp adjustment to MAX_PAN_RATE per cycle
                         pan_adjustment = max(-MAX_PAN_RATE, min(MAX_PAN_RATE, pan_adjustment))
                         pan_angle = max(-90, min(90, pan_angle + pan_adjustment))
 
-                        # Proportional tilt control with rate limiting
+                        # Calculate tilt angle using trigonometry (same approach as pan)
                         # Calculate Y offset from target position
                         y_actual = target.spatialCoordinates.y
                         y_target = calculate_target_y(z_depth)
                         y_offset = y_actual - y_target
 
-                        tilt_adjustment = -y_offset * TILT_GAIN
+                        angle_to_target_y = math.degrees(math.atan2(y_offset, z_depth))
+                        tilt_adjustment = -angle_to_target_y
                         tilt_adjustment = max(-MAX_PAN_RATE, min(MAX_PAN_RATE, tilt_adjustment))
                         tilt_angle = max(-90, min(90, tilt_angle + tilt_adjustment))
 
                         try:
-                            set_angle(pan_servo, pan_angle)
-                            set_angle(tilt_servo, tilt_angle)
+                            log.info(
+                                f"Tracking: "
+                                f"x_offset={x_offset:.1f}mm, angle_x={angle_to_target:.2f}deg, "
+                                f"pan_adj={pan_adjustment:.2f}, pan={pan_angle:.2f}; "
+                                f"y_offset={y_offset:.1f}mm, angle_y={angle_to_target_y:.2f}deg, "
+                                f"tilt_adj={tilt_adjustment:.2f}, tilt={tilt_angle:.2f}"
+                            )
+                            set_angle(pan_servo, pan_angle, log)
+                            set_angle(tilt_servo, tilt_angle, log)
+                            # Wait for servo to physically move before next measurement
+                            # We are tracking slow moving animals, so this delay is acceptable and adds stability
+                            time.sleep(TRACKING_DELAY)
                         except Exception as e:
                             log.error(f"Servo error: {e}")
 
@@ -395,9 +419,7 @@ def main():
                             log.info(f"Centered! X={x_offset:.0f}mm. Shooting...")
                             state = TurretState.SHOOTING
                             try:
-                                # TODO: uncomment when ready to shoot
-                                log.info("Debugging: Activating pump...")
-                                #pump.on()
+                                pump.on()
                             except Exception as e:
                                 log.error(f"Pump error: {e}")
                             shoot_start = now
@@ -413,9 +435,11 @@ def main():
                             log.info("Shot complete. Cooldown...")
                             state = TurretState.COOLDOWN
                             cooldown_start = now
+                            is_idle_cooldown = False
 
                     elif state == TurretState.COOLDOWN:
-                        if now - cooldown_start >= COOLDOWN_DURATION:
+                        cooldown_duration = IDLE_COOLDOWN_DURATION if is_idle_cooldown else COOLDOWN_DURATION
+                        if now - cooldown_start >= cooldown_duration:
                             state = TurretState.TRACKING
                             log.info("Resuming tracking")
 
@@ -434,7 +458,8 @@ def main():
                             state = TurretState.SCANNING
 
                     elif state == TurretState.COOLDOWN:
-                        if now - cooldown_start >= COOLDOWN_DURATION:
+                        cooldown_duration = IDLE_COOLDOWN_DURATION if is_idle_cooldown else COOLDOWN_DURATION
+                        if now - cooldown_start >= cooldown_duration:
                             log.info("Cooldown complete. Scanning...")
                             state = TurretState.SCANNING
 
@@ -446,9 +471,9 @@ def main():
 
                     # Reset tilt to neutral when transitioning to SCANNING
                     if state == TurretState.SCANNING and previous_state != TurretState.SCANNING:
-                        tilt_angle = 0.0
+                        tilt_angle = SCANNING_TILT_ANGLE
                         try:
-                            set_angle(tilt_servo, tilt_angle)
+                            set_angle(tilt_servo, tilt_angle, log)
                         except Exception as e:
                             log.error(f"Servo error resetting tilt: {e}")
 
@@ -459,12 +484,24 @@ def main():
                         if pan_angle >= SCAN_RANGE[1]:
                             pan_angle = SCAN_RANGE[1]
                             scan_direction = -1
+                            if not scan_detected_target:
+                                state = TurretState.COOLDOWN
+                                cooldown_start = now
+                                is_idle_cooldown = True
+                                log.info("Full scan complete, no targets. Entering idle cooldown...")
+                            scan_detected_target = False
                         elif pan_angle <= SCAN_RANGE[0]:
                             pan_angle = SCAN_RANGE[0]
                             scan_direction = 1
+                            if not scan_detected_target:
+                                state = TurretState.COOLDOWN
+                                cooldown_start = now
+                                is_idle_cooldown = True
+                                log.info("Full scan complete, no targets. Entering idle cooldown...")
+                            scan_detected_target = False
 
                         try:
-                            set_angle(pan_servo, pan_angle)
+                            set_angle(pan_servo, pan_angle, log)
                         except Exception as e:
                             log.error(f"Servo error: {e}")
                         time.sleep(SCAN_DELAY)
