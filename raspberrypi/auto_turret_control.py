@@ -30,13 +30,13 @@ FPS = 15  # Reduced from 30 for RPi Zero 2W efficiency
 # Timing
 SHOOT_DURATION = 3.0  # Seconds to spray water
 COOLDOWN_DURATION = 10.0  # Seconds after shooting before resuming
-IDLE_COOLDOWN_DURATION = 60.0  # Seconds to idle after full scan with no detections. Increase to preserve battery.
+IDLE_COOLDOWN_DURATION = 30.0  # Seconds to idle after full scan with no detections. Increase to preserve battery.
 GREEN_MASK_INTERVAL = 10.0  # Seconds between green mask updates. Increase to reduce CPU load.
 
 # Scanning mode
-SCAN_RANGE = (-45, 60)  # Pan angle range (degrees)
+SCAN_RANGE = (-40, 60)  # Pan angle range (degrees)
 SCAN_STEP = 5  # Degrees per scan movement
-SCAN_DELAY = 2.0  # Seconds between scan steps
+SCAN_DELAY = 0.5  # Seconds between scan steps
 SCANNING_TILT_ANGLE = 45.0  # Tilt angle during scanning (degrees)
 
 # Tracking control
