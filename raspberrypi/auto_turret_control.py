@@ -37,14 +37,14 @@ GREEN_MASK_INTERVAL = 10.0  # Seconds between green mask updates. Increase to re
 SCAN_RANGE = (-40, 60)  # Pan angle range (degrees)
 SCAN_STEP = 5  # Degrees per scan movement
 SCAN_DELAY = 0.5  # Seconds between scan steps
-SCANNING_TILT_ANGLE = 45.0  # Tilt angle during scanning (degrees)
+SCANNING_TILT_ANGLE = 25.0  # Tilt angle during scanning (degrees). Adjust to your mounting position.
 
 # Tracking control
 CENTERING_THRESHOLD = 50  # mm - X offset considered "centered"
 TRACKING_DELAY = 0.5  # Seconds to wait after servo command before next measurement
 
 # Targeting control
-TARGET_DETECTION_CONFIDENCE_THRESHOLD = 0.6  # Minimum confidence to consider a detection valid. Increase to reduce false positives.
+TARGET_DETECTION_CONFIDENCE_THRESHOLD = 0.5  # Minimum confidence to consider a detection valid. Increase to reduce false positives.
 
 # Hardware pins
 PUMP_PIN = 17
@@ -200,7 +200,7 @@ def is_valid_spatial_coordinates(detection) -> bool:
 
 
 def select_best_detection(detections, allowed_classes: set,
-                          green_detector: GreenZoneDetector, log):
+                          green_detector: GreenZoneDetector, log, is_scanning: bool = False):
     """
     Select the highest-confidence detection from allowed classes outside green zone.
 
@@ -208,6 +208,7 @@ def select_best_detection(detections, allowed_classes: set,
         detections: List of detection objects
         allowed_classes: Set of class names to consider
         green_detector: GreenZoneDetector instance
+        is_scanning: If True, apply stricter y_nm filtering
 
     Returns:
         Best detection or None if no valid detection found.
@@ -220,9 +221,19 @@ def select_best_detection(detections, allowed_classes: set,
         #log.info("Before is_valid_spatial_coordinates")
         if not is_valid_spatial_coordinates(det):
             continue
-        #log.info("Before green_detector")
-        if not green_detector.is_outside_green(det):
+        # Filter by depth and height boundaries
+        # The target must be within reasonable distance (z_nm low)
+        # The target has to be on the lower part of the frame (y_nm high). So even when shooting that will be the case
+        z_nm = det.spatialCoordinates.z
+        y_nm = det.spatialCoordinates.y
+        if z_nm >= 4000:
             continue
+        elif is_scanning and y_nm <= -600:
+            continue
+        #log.info("Before green_detector")
+        # it was easier to setup a physical boundary than to tune the green detector
+        #if not green_detector.is_outside_green(det):
+        #    continue
         log.info(f"Adding {det.labelName} to valid detections. Coordinates: x={det.spatialCoordinates.x:.2f}, y={det.spatialCoordinates.y:.2f}, z={det.spatialCoordinates.z:.2f} Passed all checks")
         valid.append(det)
 
@@ -308,7 +319,7 @@ def main():
             spatialNet.input.setBlocking(False)
             spatialNet.setBoundingBoxScaleFactor(0.5)
             spatialNet.setDepthLowerThreshold(100)
-            spatialNet.setDepthUpperThreshold(5000)
+            spatialNet.setDepthUpperThreshold(10000)
             spatialNet.setConfidenceThreshold(TARGET_DETECTION_CONFIDENCE_THRESHOLD)
 
             # Link mono cameras to stereo
@@ -354,7 +365,8 @@ def main():
                 if det_msg is not None:
                     detections = det_msg.detections
                     target = select_best_detection(
-                        detections, ALLOWED_CLASSES, green_detector, log
+                        detections, ALLOWED_CLASSES, green_detector, log,
+                        is_scanning=(state == TurretState.SCANNING)
                     )
                 # uncommenting this generates too much log info
                 #else:

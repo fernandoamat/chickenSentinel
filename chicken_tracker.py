@@ -194,8 +194,8 @@ with dai.Pipeline() as p:
     spatialDetectionNetwork.input.setBlocking(False)
     spatialDetectionNetwork.setBoundingBoxScaleFactor(0.5)
     spatialDetectionNetwork.setDepthLowerThreshold(100)
-    spatialDetectionNetwork.setDepthUpperThreshold(5000)
-    spatialDetectionNetwork.setConfidenceThreshold(0.25)
+    spatialDetectionNetwork.setDepthUpperThreshold(10000)
+    spatialDetectionNetwork.setConfidenceThreshold(0.15)
 
     # Linking
     monoLeft.requestOutput((640, 400)).link(stereo.left)
