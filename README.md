@@ -79,7 +79,7 @@ Monitor via SSH - the script outputs timestamped logs:
 14:32:19 [INFO] Centered! X=32mm. Shooting...
 14:32:22 [INFO] Shot complete. Cooldown...
 14:32:23 [INFO] Resuming tracking
-14:32:26 [INFO] Target lost for 2.0s. Scanning...
+14:32:26 [INFO] Target lost for 5.0s. Scanning...
 14:32:45 [INFO] Status: state=SCANNING, pan=-15.0, tilt=0.0, detections=3
 ```
 
@@ -120,7 +120,7 @@ The turret operates as a finite state machine with 4 states:
      ▲                          │                          │
      │                          │                          │
      │      target lost         │                          │
-     │      for 2 seconds       │                          │
+     │      for 5 seconds       │                          │
      │◀─────────────────────────┤                          │
      │                                                     │
      │                     ┌──────────┐                    │
@@ -131,9 +131,9 @@ The turret operates as a finite state machine with 4 states:
 | State | Description | Transitions |
 |-------|-------------|-------------|
 | `SCANNING` | No target detected. Pans back and forth within `SCAN_RANGE`. Tilt at neutral (0°). | → TRACKING (when valid target detected) |
-| `TRACKING` | Target acquired. Adjusts pan/tilt to center target using proportional control. | → SHOOTING (when centered), → SCANNING (target lost for 2s) |
+| `TRACKING` | Target acquired. Adjusts pan/tilt to center target using trigonometry-based control. | → SHOOTING (when centered), → SCANNING (target lost for 5s) |
 | `SHOOTING` | Pump activated. Holds position for `SHOOT_DURATION`. | → COOLDOWN (when done) |
-| `COOLDOWN` | Brief pause after shooting (`COOLDOWN_DURATION`). | → TRACKING (if target visible), → SCANNING (if no target) |
+| `COOLDOWN` | Pause after shooting (`COOLDOWN_DURATION`) or after full scan with no targets (`IDLE_COOLDOWN_DURATION`). | → TRACKING (if target visible), → SCANNING (if no target) |
 
 ### Configuration Constants
 
@@ -143,7 +143,7 @@ All tunable parameters are at the top of `raspberrypi/auto_turret_control.py`:
 
 | Constant | Default | Description |
 |----------|---------|-------------|
-| `ALLOWED_CLASSES` | `{'bird', 'horse', 'sheep', 'cow', 'bear'}` | YOLO classes to target |
+| `ALLOWED_CLASSES` | `{'bird', 'horse', 'sheep', 'cow', 'bear', 'bottle'}` | YOLO classes to target |
 | `FPS` | 15 | Camera frame rate (reduced for efficiency) |
 
 #### Timing
@@ -151,26 +151,28 @@ All tunable parameters are at the top of `raspberrypi/auto_turret_control.py`:
 | Constant | Default | Description |
 |----------|---------|-------------|
 | `SHOOT_DURATION` | 3.0 | Seconds to spray water |
-| `COOLDOWN_DURATION` | 1.0 | Seconds pause after shooting |
-| `GREEN_MASK_INTERVAL` | 3.0 | Seconds between green zone updates |
+| `COOLDOWN_DURATION` | 10.0 | Seconds pause after shooting |
+| `IDLE_COOLDOWN_DURATION` | 30.0 | Seconds to idle after full scan with no detections |
+| `GREEN_MASK_INTERVAL` | 10.0 | Seconds between green mask updates |
 
 #### Scanning Mode
 
 | Constant | Default | Description |
 |----------|---------|-------------|
-| `SCAN_RANGE` | `(-60, 60)` | Pan angle range in degrees |
+| `SCAN_RANGE` | `(-40, 60)` | Pan angle range in degrees |
 | `SCAN_STEP` | 5 | Degrees per scan movement |
 | `SCAN_DELAY` | 0.5 | Seconds between scan steps |
+| `SCANNING_TILT_ANGLE` | 25.0 | Tilt angle during scanning (degrees) |
 
 #### Tracking Control
 
 | Constant | Default | Description |
 |----------|---------|-------------|
 | `CENTERING_THRESHOLD` | 50 | mm X-offset to consider "centered" |
-| `PAN_GAIN` | 0.01 | Proportional gain for pan (degrees per mm of X offset) |
-| `TILT_GAIN` | 0.01 | Proportional gain for tilt (degrees per mm of Y offset) |
-| `TARGET_LOST_TIMEOUT` | 2.0 | Seconds before scanning after losing target |
-| `MAX_PAN_RATE` | 15.0 | Maximum degrees per cycle (smooth movement) |
+| `TRACKING_DELAY` | 0.5 | Seconds to wait after servo command before next measurement |
+| `TARGET_DETECTION_CONFIDENCE_THRESHOLD` | 0.5 | Minimum confidence to consider a detection valid |
+| `TARGET_LOST_TIMEOUT` | 5.0 | Seconds before scanning after losing target |
+| `MAX_PAN_RATE` | 2.0 | Maximum degrees per update cycle (smooth movement) |
 
 #### Monitoring
 
@@ -182,7 +184,7 @@ All tunable parameters are at the top of `raspberrypi/auto_turret_control.py`:
 
 #### `calculate_target_y(z_mm: float) -> float`
 
-**Location:** `auto_turret_control.py:94-110`
+**Location:** `auto_turret_control.py:102-118`
 
 Calculates the target Y coordinate (in mm) that the turret should aim at based on target distance. The tilt servo uses proportional control to minimize the offset between the detection's actual Y coordinate and this target value. **This needs calibration** based on your turret mounting position and water nozzle trajectory.
 
@@ -193,13 +195,13 @@ def calculate_target_y(z_mm: float) -> float:
     return (0.3654 * z_mm) - 282.318
 ```
 
-Both pan and tilt use the same proportional control approach:
-- **Pan**: Adjusts to minimize X offset (target X should be ~0mm, i.e., centered horizontally)
-- **Tilt**: Adjusts to minimize Y offset (target Y should match the calibrated formula)
+Both pan and tilt use trigonometry-based angle calculations:
+- **Pan**: Uses `atan2(x_offset, z_depth)` to calculate the exact angular offset to center the target horizontally
+- **Tilt**: Uses `atan2(y_offset, z_depth)` where y_offset is the difference between actual Y and the calibrated target Y
 
 #### `GreenZoneDetector`
 
-**Location:** `auto_turret_control.py:119-167`
+**Location:** `auto_turret_control.py:126-174`
 
 Detects grass/green areas using simple RGB thresholding. Targets standing on grass are considered "safe" and won't be sprayed.
 
@@ -208,7 +210,7 @@ Detects grass/green areas using simple RGB thresholding. Targets standing on gra
 
 #### `is_valid_spatial_coordinates(detection) -> bool`
 
-**Location:** `auto_turret_control.py:175-192`
+**Location:** `auto_turret_control.py:182-199`
 
 Validates that a detection has usable 3D coordinates:
 - Checks for NaN values in x, y, z coordinates
@@ -216,21 +218,24 @@ Validates that a detection has usable 3D coordinates:
 
 #### `select_best_detection()`
 
-**Location:** `auto_turret_control.py:195-227`
+**Location:** `auto_turret_control.py:202-244`
 
 Selects the highest-confidence detection that:
 1. Is in `ALLOWED_CLASSES`
 2. Has valid spatial coordinates (not NaN, positive depth)
-3. Is outside the green zone (not on grass)
+3. Is within 4000mm depth range
+4. During scanning: has Y coordinate above -600mm
 
 ### Safety Features
 
 The system will only shoot when ALL conditions are met:
 1. Target class is in `ALLOWED_CLASSES`
 2. Target has valid spatial coordinates (not NaN, positive depth)
-3. Target centroid is outside the green zone (grass)
+3. Target depth is less than 4000mm
 4. Target is centered (X offset < `CENTERING_THRESHOLD`)
 5. Not in cooldown period
+
+**Note:** Green zone detection (grass area filtering) is implemented but currently disabled in the code. A physical boundary was found to be more reliable than tuning the green detector.
 
 ### Robustness Features
 
@@ -264,13 +269,14 @@ chickenSentinel/
 
 ## Calibration Guide
 
-### 1. Pan/Tilt Gain Tuning
+### 1. Tracking Rate Tuning
 
-If tracking is too slow, increase `PAN_GAIN` and `TILT_GAIN`. If the servos oscillate or overshoot, decrease them.
+The turret uses trigonometry-based angle calculations with `math.atan2()` to determine the exact angular offset to the target. The `MAX_PAN_RATE` constant limits how fast the servos can move per update cycle for smooth tracking.
+
+If tracking is too slow, increase `MAX_PAN_RATE`. If the servos oscillate or overshoot, decrease it.
 
 ```python
-PAN_GAIN = 0.01   # degrees per mm of X offset
-TILT_GAIN = 0.01  # degrees per mm of Y offset
+MAX_PAN_RATE = 2.0  # Maximum degrees per update cycle
 ```
 
 ### 2. Target Y Calibration
@@ -296,6 +302,8 @@ self.threshold = 0  # Increase if false positives, decrease if missing grass
 - `depthai>=3.2.1` - DepthAI camera SDK
 - `opencv-python>=4.11.0.86` - Computer vision
 - `numpy>=2.3.5` - Numerical processing
+- `blobconverter>=1.4.3` - Neural network model conversion
+- `matplotlib>=3.10.8` - Plotting (for debugging notebooks)
 - `gpiozero>=2.0.1` - GPIO control (Raspberry Pi)
 - `rpi-hardware-pwm` - Hardware PWM for servos (Raspberry Pi)
 
