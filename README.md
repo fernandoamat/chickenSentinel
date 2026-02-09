@@ -12,6 +12,7 @@ Pictures of how the final system looks like. It is totally portable in a 12x12 w
 
 ## System Architecture
 
+```
 graph TD
     %% Nodes
     Battery[TalentCell Battery]
@@ -40,6 +41,7 @@ graph TD
     Mosfet -- "Switches Ground" --> Pump
     Pi -- "GND (Common)" --> Battery
     Pi -- "5V Power" --> Servos
+```
 
 
 ## Software design
