@@ -2,7 +2,18 @@
 
 An autonomous chicken deterrent system using computer vision and a water spray turret. The system detects birds and other animals using a DepthAI OAK-D stereo camera with YOLOv6 object detection, then tracks and sprays targets that venture outside designated "safe zones" (grass areas).
 
+This project was develop in partnership with Gemini 3.0 to refine the ideas and parts list and then with Claude Code to implement all the code. It is definitely a passion project but it is saving my lawn and patio from being invaded by my chickens.
+
+<img src="images/chickenSentinel_00%20Large.jpeg" alt="chickenSentinel00" width="400"><img src="images/chickenSentinel_01%20Large.jpeg" alt="chickenSentinel01" width="400">
+Pictures of how the final system looks like. It is totally portable in a 12x12 wood board. The battery can easily be removed to charge. It last ~6-8 hours as long as it is not shooting all the time. Right image shows final build with the pump connected to bucket with water.
+
+
+TODO: add video
+Video demonstrating the system with a bottle. It much easier to debug with inanimate objects but the system works exactly the same with any other object (like chickens) that can be detected and tracked by the camera.
+
 ## Architecture
+
+TODO: add system architecture
 
 ```
 ┌─────────────────────┐     USB      ┌─────────────────────────────────┐
@@ -47,6 +58,43 @@ An autonomous chicken deterrent system using computer vision and a water spray t
 | Pan Servo | 12 | Channel 0 |
 | Tilt Servo | 13 | Channel 1 |
 | Water Pump | 17 | Digital Out |
+
+## 🛠️ Parts lists
+Total cost in December 2025 for the entire project was around $350.
+
+| Component | Description | Model / Notes | Buy Link |
+| :--- | :--- | :--- | :--- |
+| **Controller** | Single Board Computer | **Raspberry Pi Zero 2 W**<br>The brain of the sentinel. | [Buy from Raspberry Pi](https://www.raspberrypi.com/products/raspberry-pi-zero-2-w/) |
+| **Camera** | AI Camera | **Luxonis OAK-D Lite**<br>Planned upgrade for person/animal detection. | [Buy from Luxonis](https://shop.luxonis.com/products/oak-d-lite-1) |
+| **Turret Mechanism** | Pan/Tilt Kit | **Pan/Tilt Bracket + 2x Servos**<br>Generic kit for aiming. | [Amazon](https://www.amazon.com/Yahboom-Pan-Tilt-Electric-Platform-Accessories/dp/B0BRXVFCKX) |
+| **Water Cannon** | Pump | **12V DC Submersible Pump**<br>Connected to GPIO 17 via MOSFET. | [Amazon](https://www.amazon.com/dp/B00DLKT4OO) |
+| **Pump Control** | Switch | **MOSFET Module DF-DFR0457**<br>Allows the 3.3V Pi to switch on/off the 12V pump. | [Buy from TME](https://www.tme.com/us/en-us/details/df-dfr0457/others-power-supply-modules/dfrobot/dfr0457/) |
+| **Power Supply** | Battery | **TalentCell Rechargeable 12V/5V**<br>Powers both the Pi (via 5V USB) and Pump (via 12V DC). | [Amazon](https://www.amazon.com/dp/B01337QXMA) |
+| **DC Buck Converter** | Converter | **Adjustable Power Supply**<br>Lowers the DC current of the battery from 12V to 7.6V for the servos. | [Amazon](https://www.amazon.com/dp/B078Q1624B) |
+| **Power Splitter** | Cable Splitter | **Y-Splitter Cable**<br>Power splitter for both servos. | [Amazon](https://www.amazon.com/dp/B0FCD32RBB) |
+| **USB Power Cable** | Power Cable | **USB to Barrel Jack**<br>Powers Raspberry Pi from battery. | [Amazon](https://www.amazon.com/dp/B0FS651N2G) |
+| **DC Power Cables** | Power Cables | **DC Barrel Cables**<br>Connects splitter to DC converter. | [Amazon](https://www.amazon.com/dp/B0CRB1QP71) |
+| **Vinyl Tubing** | Water Tubing | **Flexible Vinyl Tube**<br>Carries water from pump to nozzle. | [Amazon](https://www.amazon.com/dp/B07MTYMW13) |
+| **USB-C Cable** | Data Cable | **USB-C to USB-A**<br>Connects OAK-D camera to Raspberry Pi. | [Amazon](https://www.amazon.com/dp/B0D97GS238) |
+| **Jumper Wires** | Wiring | **Dupont Jumper Wires**<br>Pin wires to connect GPIO components. | [Amazon](https://www.amazon.com/dp/B01EV70C78) |
+
+## File Structure
+
+```
+chickenSentinel/
+├── chicken_tracker.py          # Desktop visualization with YOLO + depth
+├── raspberrypi/
+│   ├── auto_turret_control.py  # Autonomous turret controller
+│   └── manual_turret_control.py # Manual servo/pump testing
+├── notebooks/
+│   └── debug_green_mask.ipynb  # Green zone detection debugging
+├── openscad/                   # 3D printable parts
+│   ├── nozzleAttachmentServo.scad
+│   └── batteryBase.scad
+├── pyproject.toml              # Project dependencies
+├── CLAUDE.md                   # AI assistant instructions
+└── README.md                   # This file
+```
 
 ## Installation
 
@@ -249,23 +297,6 @@ The code includes several robustness improvements for reliable operation:
 - **Pan rate limiting**: Prevents jerky servo movements with `MAX_PAN_RATE`
 - **Tilt reset on scan**: Returns tilt to neutral when entering scanning mode
 
-## File Structure
-
-```
-chickenSentinel/
-├── chicken_tracker.py          # Desktop visualization with YOLO + depth
-├── raspberrypi/
-│   ├── auto_turret_control.py  # Autonomous turret controller
-│   └── manual_turret_control.py # Manual servo/pump testing
-├── notebooks/
-│   └── debug_green_mask.ipynb  # Green zone detection debugging
-├── openscad/                   # 3D printable parts
-│   ├── nozzleAttachmentServo.scad
-│   └── batteryBase.scad
-├── pyproject.toml              # Project dependencies
-├── CLAUDE.md                   # AI assistant instructions
-└── README.md                   # This file
-```
 
 ## Calibration Guide
 
@@ -306,6 +337,8 @@ self.threshold = 0  # Increase if false positives, decrease if missing grass
 - `matplotlib>=3.10.8` - Plotting (for debugging notebooks)
 - `gpiozero>=2.0.1` - GPIO control (Raspberry Pi)
 - `rpi-hardware-pwm` - Hardware PWM for servos (Raspberry Pi)
+
+TODO: add a section about 3D printing
 
 ## License
 

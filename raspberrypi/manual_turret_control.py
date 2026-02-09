@@ -8,6 +8,9 @@ Python script that I can execute in the Raspberry PI where I control the servos
 with the arrow keys (I will be SSHing into the Raspberry Pi to run the Python script) 
 and activate the water pump (i.e. "shoot" for 3 seconds) when pressing 
 the letter s in my laptop keyboard.
+
+This is great to test the hardware and make sure everything is working.
+Also to calibrate the angles of the servos and make sure they are moving in the correct direction.
 """
 
 # --- HARDWARE CONFIGURATION ---

@@ -10,6 +10,13 @@ Example from https://docs.luxonis.com/software-v3/depthai/examples/spatial_detec
 For Depth AI v3.x API
 
 Uses the YOLOv6-nano model for object detection and spatial information.
+
+You can connect the camera to a computer and run this script to see the RGB feed with detections, 
+the depth feed with bounding boxes, and a green mask that identifies grassy areas. 
+Detections that are outside the green areas will be highlighted in the RGB feed 
+and have their bounding boxes drawn in the depth feed.
+
+This script is also very useful to calibrate def calculate_target_y(z_mm: float) -> float in auto_turret_control.py
 """
 
 modelDescription = dai.NNModelDescription("yolov6-nano")
