@@ -10,37 +10,30 @@ Pictures of how the final system looks like. It is totally portable in a 12x12 w
 
 [Video](https://github.com/user-attachments/assets/673e242a-7802-41d2-aea9-533b167c6f6e) demonstrating the system detecting and squirting water to a bottle (capturing footage with the chickens was hard). It much easier to debug with inanimate objects but the system works exactly the same with any other object (like chickens) that can be detected and tracked by the camera.
 
-## System Architecture
+## System Block Diagram
 
 ```
-graph TD
-    %% Nodes
-    Battery[TalentCell Battery]
-    Pi[Raspberry Pi Zero 2 W]
-    Cam[Luxonis OAK-D Lite]
-    Mosfet[MOSFET IRLZ44N]
-    Pump[12V Water Pump]
-    Servos[Pan/Tilt Servos]
-
-    %% Styles
-    style Battery fill:#f9f,stroke:#333,stroke-width:2px
-    style Pi fill:#bbf,stroke:#333,stroke-width:2px
-    style Cam fill:#bfb,stroke:#333,stroke-width:2px
-    style Pump fill:#fbb,stroke:#333,stroke-width:2px
-
-    %% Power Connections
-    Battery -- "5V USB" --> Pi
-    Battery -- "12V DC" --> Pump
-    
-    %% Data & Control Connections
-    Pi -- "USB-C (Data)" --> Cam
-    Pi -- "GPIO 17 (PWM)" --> Mosfet
-    Pi -- "GPIO 12/13 (PWM)" --> Servos
-    
-    %% Electrical Logic
-    Mosfet -- "Switches Ground" --> Pump
-    Pi -- "GND (Common)" --> Battery
-    Pi -- "5V Power" --> Servos
+       +-----------------------+
+       |   TalentCell Battery  |
+       |  (12V DC  &  5V USB)  |
+       +---+---------------+---+
+           |               |
+           | 12V           | 5V USB
+           v               v
+    +-------------+   +-------------------------+
+    |  Water Pump |   |  Raspberry Pi Zero 2 W  |
+    |   (12V DC)  |   |      (Controller)       |
+    +------+------+   +----+-------+--------+---+
+           |               |       |        |
+           |               | USB   | GPIO   | GPIO
+           |               v       v        v
+    +------+------+   +--------+  +----+  +--------+
+    |   MOSFET    |<--| GPIO 17|  |Pan/|  | OAK-D  |
+    |  (Switch)   |   +--------+  |Tilt|  | Lite   |
+    +-------------+               |Svrs|  | Camera |
+           ^                      +----+  +--------+
+           |
+      Common GND
 ```
 
 
