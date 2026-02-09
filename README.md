@@ -7,9 +7,8 @@ This project was develop in partnership with Gemini 3.0 to refine the ideas and 
 <img src="images/chickenSentinel_00%20Large.jpeg" alt="chickenSentinel00" width="400"><img src="images/chickenSentinel_01%20Large.jpeg" alt="chickenSentinel01" width="400">
 Pictures of how the final system looks like. It is totally portable in a 12x12 wood board. The battery can easily be removed to charge. It last ~6-8 hours as long as it is not shooting all the time. Right image shows final build with the pump connected to bucket with water.
 
-
-TODO: add video
-Video demonstrating the system with a bottle. It much easier to debug with inanimate objects but the system works exactly the same with any other object (like chickens) that can be detected and tracked by the camera.
+https://github.com/user-attachments/assets/673e242a-7802-41d2-aea9-533b167c6f6e
+Video demonstrating the system detecting and squirting water to a bottle (capturing footage with the chickens was hard). It much easier to debug with inanimate objects but the system works exactly the same with any other object (like chickens) that can be detected and tracked by the camera.
 
 ## Architecture
 
