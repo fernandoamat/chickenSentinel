@@ -7,13 +7,42 @@ This project was develop in partnership with Gemini 3.0 to refine the ideas and 
 <img src="images/chickenSentinel_00%20Large.jpeg" alt="chickenSentinel00" width="400"><img src="images/chickenSentinel_01%20Large.jpeg" alt="chickenSentinel01" width="400">
 Pictures of how the final system looks like. It is totally portable in a 12x12 wood board. The battery can easily be removed to charge. It last ~6-8 hours as long as it is not shooting all the time. Right image shows final build with the pump connected to bucket with water.
 
-https://github.com/user-attachments/assets/673e242a-7802-41d2-aea9-533b167c6f6e
-Video demonstrating the system detecting and squirting water to a bottle (capturing footage with the chickens was hard). It much easier to debug with inanimate objects but the system works exactly the same with any other object (like chickens) that can be detected and tracked by the camera.
 
-## Architecture
+[Video](https://github.com/user-attachments/assets/673e242a-7802-41d2-aea9-533b167c6f6e) demonstrating the system detecting and squirting water to a bottle (capturing footage with the chickens was hard). It much easier to debug with inanimate objects but the system works exactly the same with any other object (like chickens) that can be detected and tracked by the camera.
 
-TODO: add system architecture
+## System Architecture
 
+graph TD
+    %% Nodes
+    Battery[TalentCell Battery]
+    Pi[Raspberry Pi Zero 2 W]
+    Cam[Luxonis OAK-D Lite]
+    Mosfet[MOSFET IRLZ44N]
+    Pump[12V Water Pump]
+    Servos[Pan/Tilt Servos]
+
+    %% Styles
+    style Battery fill:#f9f,stroke:#333,stroke-width:2px
+    style Pi fill:#bbf,stroke:#333,stroke-width:2px
+    style Cam fill:#bfb,stroke:#333,stroke-width:2px
+    style Pump fill:#fbb,stroke:#333,stroke-width:2px
+
+    %% Power Connections
+    Battery -- "5V USB" --> Pi
+    Battery -- "12V DC" --> Pump
+    
+    %% Data & Control Connections
+    Pi -- "USB-C (Data)" --> Cam
+    Pi -- "GPIO 17 (PWM)" --> Mosfet
+    Pi -- "GPIO 12/13 (PWM)" --> Servos
+    
+    %% Electrical Logic
+    Mosfet -- "Switches Ground" --> Pump
+    Pi -- "GND (Common)" --> Battery
+    Pi -- "5V Power" --> Servos
+
+
+## Software design
 ```
 ┌─────────────────────┐     USB      ┌─────────────────────────────────┐
 │      OAK-D          │─────────────▶│     Raspberry Pi Zero 2W        │
@@ -337,7 +366,17 @@ self.threshold = 0  # Increase if false positives, decrease if missing grass
 - `gpiozero>=2.0.1` - GPIO control (Raspberry Pi)
 - `rpi-hardware-pwm` - Hardware PWM for servos (Raspberry Pi)
 
-TODO: add a section about 3D printing
+## 3D Printed Parts
+
+The `openscad/` directory contains STL files for custom mounting hardware. All parts were designed in OpenSCAD and can be modified if needed.
+
+| Part | File | Description |
+| :--- | :--- | :--- |
+| **Nozzle Adapter** | `nozzleAttachmentServo.stl` | Mounts the brass hose fitting to the pan/tilt bracket. Uses M3 screws. |
+| **Battery Holder** | `batteryBase.stl` | Sleeve for the TalentCell battery with screw-down mounting flanges. |
+| **Hose Connector** | `M0110_double-ended-barbed-hose-connector.stl` | Barbed connector for vinyl tubing. Can also be purchased online. |
+
+**Print settings:** PLA or PETG, 0.2mm layer height, 20% infill. No supports needed.
 
 ## License
 
